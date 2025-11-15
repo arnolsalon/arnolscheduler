@@ -14,11 +14,12 @@ const app = express();
 // ----- Env vars -----
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
 if (!OPENAI_API_KEY) {
   console.warn('⚠️  OPENAI_API_KEY is not set. Caption generation will fail.');
 }
 if (!ADMIN_PASSWORD) {
-  console.warn('⚠️  ADMIN_PASSWORD is not set. Set it in your .env / Render env.');
+  console.warn('⚠️  ADMIN_PASSWORD is not set. Login will fail.');
 }
 
 // ----- Basic middleware -----
@@ -52,7 +53,7 @@ db.prepare(`
   )
 `).run();
 
-// Optional: simple social accounts table
+// Social accounts table (simple)
 db.prepare(`
   CREATE TABLE IF NOT EXISTS social_accounts (
     platform TEXT PRIMARY KEY,
@@ -72,12 +73,17 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// 🔓 LOGIN ROUTE (NO requireAuth HERE)
 app.post('/api/login', (req, res) => {
   try {
     const { password } = req.body;
+
     if (!ADMIN_PASSWORD) {
-      return res.status(500).json({ error: 'Server auth not configured.' });
+      return res.status(500).json({
+        error: 'ADMIN_PASSWORD is not configured on the server.',
+      });
     }
+
     if (!password || password !== ADMIN_PASSWORD) {
       return res.status(401).json({ error: 'Invalid password' });
     }
@@ -107,15 +113,11 @@ function mapRow(row) {
     id: row.id,
     filePath: row.file_path,
     fileUrl: row.file_url,
-    file_url: row.file_url, // alias for older frontend code
     mimeType: row.mime_type,
-    mime_type: row.mime_type,
     originalName: row.original_name,
-    original_name: row.original_name,
     caption: row.caption || '',
     platforms,
     scheduledAt: row.scheduled_at,
-    scheduled_at: row.scheduled_at,
     posted: !!row.posted,
   };
 }
@@ -177,7 +179,7 @@ Return JSON with this structure:
       const parsed = JSON.parse(text);
       caption = parsed.caption || '';
       hashtags = parsed.hashtags || '';
-    } catch (_e) {
+    } catch {
       caption = text.trim();
       hashtags = '';
     }
@@ -207,11 +209,10 @@ app.post(
         return res.status(400).json({ error: 'scheduledAt is required' });
       }
 
-      // Normalize platforms
       let parsedPlatforms = [];
       if (typeof platforms === 'string') {
         try {
-          parsedPlatforms = JSON.parse(platforms); // e.g., '["instagram","facebook"]'
+          parsedPlatforms = JSON.parse(platforms);
         } catch {
           parsedPlatforms = [];
         }
@@ -251,7 +252,6 @@ app.post(
         .get(result.lastInsertRowid);
 
       const job = mapRow(row);
-
       return res.json({ message: 'Post scheduled', job });
     } catch (err) {
       console.error(err);
@@ -274,7 +274,7 @@ app.get('/api/schedule', requireAuth, (req, res) => {
   }
 });
 
-// ----- Update scheduled post (caption, time, platforms) -----
+// ----- Update scheduled post -----
 app.put('/api/schedule/:id', requireAuth, (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -352,7 +352,7 @@ app.delete('/api/schedule/:id', requireAuth, (req, res) => {
   }
 });
 
-// ----- Optional: social accounts API (simple stub) -----
+// ----- Social accounts API -----
 app.get('/api/accounts', requireAuth, (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM social_accounts').all();
@@ -396,10 +396,7 @@ async function postToPlatforms(job) {
   console.log('Posting job', job.id, 'to', job.platforms);
   console.log('  File path:', job.filePath);
   console.log('  Caption:', job.caption);
-
-  // TODO: Call Facebook / Instagram / TikTok APIs here using stored tokens.
-
-  // For now, just simulate success:
+  // TODO: implement real API calls here
   return true;
 }
 

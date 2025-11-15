@@ -22,12 +22,11 @@ function App() {
     window.localStorage.removeItem('authToken');
   };
 
-  // 🔒 If not logged in, only show the password prompt
+  // If not logged in, show only the login page
   if (!authToken) {
     return <LoginPage onLoggedIn={handleLoggedIn} />;
   }
 
-  // ✅ Once logged in, show the actual app
   return (
     <div className="app-shell">
       <header className="app-header">

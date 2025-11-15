@@ -18,14 +18,23 @@ function LoginPage({ onLoggedIn }) {
         body: JSON.stringify({ password }),
       });
 
-      const data = await res.json();
+      const text = await res.text(); // read raw text
+      let data = {};
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Not JSON – probably HTML like "<!DOCTYPE html>..."
+        throw new Error(text || 'Non-JSON response from server');
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Login failed');
       }
 
-      // backend returns { token: "..." }
       onLoggedIn(data.token);
     } catch (err) {
+      console.error('Login error:', err);
       setStatus(err.message || 'Login failed');
     }
   };
