@@ -1,91 +1,92 @@
 // src/UpcomingPage.js
 import React, { useEffect, useState } from 'react';
 
-const API_URL = 'http://localhost:4000';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
-function UpcomingPage() {
+function UpcomingPage({ authToken }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
-
-  // Edit state
+  const [statusMsg, setStatusMsg] = useState('');
   const [editingId, setEditingId] = useState(null);
-  const [editCaption, setEditCaption] = useState('');
-  const [editDatetime, setEditDatetime] = useState('');
-  const [editPlatforms, setEditPlatforms] = useState([]);
+  const [editForm, setEditForm] = useState({
+    caption: '',
+    scheduledAt: '',
+    platforms: [],
+  });
 
-  // Load posts on mount
-  useEffect(() => {
-    const fetchPosts = async () => {
-      setLoading(true);
-      setErrorMsg('');
-
-      try {
-        const res = await fetch(`${API_URL}/api/schedule`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to load scheduled posts');
-        }
-
-        // Sort by time, upcoming first
-        const sorted = data.sort((a, b) => {
-          const aTime = new Date(a.scheduledAt || a.scheduled_at).getTime();
-          const bTime = new Date(b.scheduledAt || b.scheduled_at).getTime();
-          return aTime - bTime;
-        });
-
-        setPosts(sorted);
-      } catch (err) {
-        console.error(err);
-        setErrorMsg(err.message || 'Something went wrong');
-      } finally {
-        setLoading(false);
+  const loadPosts = async () => {
+    setLoading(true);
+    setStatusMsg('');
+    try {
+      const res = await fetch(`${API_URL}/api/schedule`, {
+        headers: { 'x-auth-token': authToken },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load posts');
       }
-    };
+      setPosts(data);
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(err.message || 'Failed to load upcoming posts');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchPosts();
+  useEffect(() => {
+    loadPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Edit helpers ----
   const startEdit = (post) => {
-    const scheduledRaw = post.scheduledAt || post.scheduled_at;
-    const iso = new Date(scheduledRaw).toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm
-
     setEditingId(post.id);
-    setEditCaption(post.caption || '');
-    setEditDatetime(iso);
-    setEditPlatforms(post.platforms || []);
+    setEditForm({
+      caption: post.caption || '',
+      scheduledAt: post.scheduledAt
+        ? post.scheduledAt.slice(0, 16) // ISO → yyyy-MM-ddTHH:mm
+        : '',
+      platforms: post.platforms || [],
+    });
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setEditCaption('');
-    setEditDatetime('');
-    setEditPlatforms([]);
+    setEditForm({
+      caption: '',
+      scheduledAt: '',
+      platforms: [],
+    });
   };
 
-  const togglePlatform = (name) => {
-    setEditPlatforms((prev) =>
-      prev.includes(name)
-        ? prev.filter((p) => p !== name)
-        : [...prev, name]
-    );
+  const toggleEditPlatform = (platform) => {
+    setEditForm((prev) => {
+      const exists = prev.platforms.includes(platform);
+      return {
+        ...prev,
+        platforms: exists
+          ? prev.platforms.filter((p) => p !== platform)
+          : [...prev.platforms, platform],
+      };
+    });
   };
 
   const saveEdit = async (id) => {
-    setErrorMsg('');
     try {
+      setStatusMsg('');
+      const payload = {
+        caption: editForm.caption,
+        scheduledAt: editForm.scheduledAt,
+        platforms: editForm.platforms,
+      };
+
       const res = await fetch(`${API_URL}/api/schedule/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'x-auth-token': authToken,
         },
-        body: JSON.stringify({
-          caption: editCaption,
-          scheduledAt: editDatetime,
-          platforms: editPlatforms,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -93,203 +94,204 @@ function UpcomingPage() {
         throw new Error(data.error || 'Failed to update post');
       }
 
-      // Update local state with updated post
-      setPosts((prev) =>
-        prev.map((p) => (p.id === id ? data.post : p))
-      );
-
-      cancelEdit();
+      setStatusMsg('✅ Post updated');
+      setEditingId(null);
+      await loadPosts();
     } catch (err) {
       console.error(err);
-      setErrorMsg(err.message || 'Failed to update post');
+      setStatusMsg(err.message || 'Failed to update post');
     }
   };
 
   const deletePost = async (id) => {
-    setErrorMsg('');
-    const ok = window.confirm('Delete this scheduled post?');
-    if (!ok) return;
+    if (!window.confirm('Delete this scheduled post?')) return;
 
     try {
+      setStatusMsg('');
       const res = await fetch(`${API_URL}/api/schedule/${id}`, {
         method: 'DELETE',
+        headers: { 'x-auth-token': authToken },
       });
+
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to delete post');
       }
 
+      setStatusMsg('🗑️ Post deleted');
       setPosts((prev) => prev.filter((p) => p.id !== id));
     } catch (err) {
       console.error(err);
-      setErrorMsg(err.message || 'Failed to delete post');
+      setStatusMsg(err.message || 'Failed to delete post');
     }
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleString();
   };
 
   return (
     <section className="card">
       <h2>Upcoming Scheduled Posts</h2>
       <p className="subtitle">
-        See everything that&apos;s queued to go out for your accounts. You can
-        tweak captions, times, or platforms, or remove posts you no longer want.
+        Review everything that&apos;s scheduled and make last-minute edits if needed.
       </p>
 
-      {loading && <p>Loading posts...</p>}
-      {errorMsg && (
-        <p className="status-msg" style={{ color: '#c62828' }}>
-          Error: {errorMsg}
-        </p>
-      )}
+      {statusMsg && <p className="status-msg">{statusMsg}</p>}
 
-      {!loading && !errorMsg && posts.length === 0 && (
-        <p>No posts scheduled yet.</p>
-      )}
+      {loading ? (
+        <p>Loading...</p>
+      ) : posts.length === 0 ? (
+        <p>No upcoming posts yet. Schedule something from the main page!</p>
+      ) : (
+        <div className="upcoming-list">
+          {posts.map((post) => {
+            const isEditing = editingId === post.id;
+            const platforms = post.platforms || [];
 
-      <div className="upcoming-list">
-        {posts.map((post) => {
-          // Normalize field names for both in-memory + SQLite versions
-          const mimeType = post.mimeType || post.mime_type || '';
-          const fileUrl = post.fileUrl || post.file_url || '';
-          const originalName = post.originalName || post.original_name || '';
-          const scheduledRaw = post.scheduledAt || post.scheduled_at;
-          const isPosted =
-            post.posted === true || post.posted === 1 || post.posted === '1';
-
-          const isImage = mimeType.startsWith('image/');
-          const isVideo = mimeType.startsWith('video/');
-
-          return (
-            <div key={post.id} className="upcoming-item">
-              <div className="upcoming-media">
-                {isImage && (
-                  <img
-                    src={`http://localhost:4000${fileUrl}`}
-                    alt={originalName || 'Scheduled media'}
-                  />
-                )}
-                {isVideo && (
-                  <video
-                    src={`http://localhost:4000${fileUrl}`}
-                    controls
-                    preload="metadata"
-                  />
-                )}
-                {!isImage && !isVideo && (
-                  <div className="media-placeholder">
-                    No preview available
-                  </div>
-                )}
-              </div>
-
-              <div className="upcoming-details">
-                <div className="upcoming-time">
-                  {scheduledRaw
-                    ? new Date(scheduledRaw).toLocaleString()
-                    : 'No time set'}
-                  {isPosted ? ' · Posted' : ' · Pending'}
+            return (
+              <div key={post.id} className="upcoming-item">
+                <div className="media-preview">
+                  {post.mimeType?.startsWith('image') ? (
+                    <img
+                      src={`${API_URL}${post.fileUrl}`}
+                      alt={post.originalName || 'Scheduled media'}
+                    />
+                  ) : post.mimeType?.startsWith('video') ? (
+                    <video
+                      src={`${API_URL}${post.fileUrl}`}
+                      controls
+                      preload="metadata"
+                    />
+                  ) : (
+                    <div className="placeholder">
+                      <span>Media</span>
+                    </div>
+                  )}
                 </div>
 
-                {editingId === post.id ? (
-                  <>
-                    <div className="form-group">
-                      <label>Caption</label>
-                      <textarea
-                        value={editCaption}
-                        onChange={(e) => setEditCaption(e.target.value)}
-                      />
-                    </div>
+                <div className="upcoming-details">
+                  {!isEditing ? (
+                    <>
+                      <p className="upcoming-caption">{post.caption}</p>
+                      <p className="upcoming-meta">
+                        <strong>When:</strong> {formatDate(post.scheduledAt)}
+                      </p>
+                      <p className="upcoming-meta">
+                        <strong>Platforms:</strong>{' '}
+                        {platforms.length ? platforms.join(', ') : 'None'}
+                      </p>
+                      {post.posted && (
+                        <p className="badge posted">Already posted</p>
+                      )}
+                    </>
+                  ) : (
+                    <div className="edit-form">
+                      <div className="form-group">
+                        <label>Caption</label>
+                        <textarea
+                          value={editForm.caption}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              caption: e.target.value,
+                            }))
+                          }
+                          rows={3}
+                        />
+                      </div>
 
-                    <div className="form-group">
-                      <label>Schedule Time</label>
-                      <input
-                        type="datetime-local"
-                        value={editDatetime}
-                        onChange={(e) => setEditDatetime(e.target.value)}
-                      />
-                    </div>
+                      <div className="form-group">
+                        <label>Scheduled Time</label>
+                        <input
+                          type="datetime-local"
+                          value={editForm.scheduledAt}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              scheduledAt: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
 
-                    <div className="form-group">
-                      <label>Platforms</label>
-                      <div className="platform-row">
-                        {['instagram', 'facebook', 'tiktok'].map((name) => (
-                          <label key={name}>
+                      <div className="form-group">
+                        <label>Platforms</label>
+                        <div className="platform-row">
+                          <label>
                             <input
                               type="checkbox"
-                              checked={editPlatforms.includes(name)}
-                              onChange={() => togglePlatform(name)}
+                              checked={editForm.platforms.includes('instagram')}
+                              onChange={() => toggleEditPlatform('instagram')}
                             />
-                            {name.charAt(0).toUpperCase() + name.slice(1)}
+                            Instagram
                           </label>
-                        ))}
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={editForm.platforms.includes('facebook')}
+                              onChange={() => toggleEditPlatform('facebook')}
+                            />
+                            Facebook
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={editForm.platforms.includes('tiktok')}
+                              onChange={() => toggleEditPlatform('tiktok')}
+                            />
+                            TikTok
+                          </label>
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: '8px',
-                        marginTop: '8px',
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="primary-btn"
-                        onClick={() => saveEdit(post.id)}
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        className="primary-btn"
-                        style={{ background: '#b0bec5', boxShadow: 'none' }}
-                        onClick={cancelEdit}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="upcoming-platforms">
-                      Platforms:{' '}
-                      {post.platforms && post.platforms.length
-                        ? post.platforms.join(', ')
-                        : 'None'}
-                    </div>
-                    <div className="upcoming-caption">
-                      {post.caption || <em>No caption</em>}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: '8px',
-                        display: 'flex',
-                        gap: '8px',
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="primary-btn"
-                        onClick={() => startEdit(post)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="primary-btn"
-                        style={{ background: '#c62828', boxShadow: 'none' }}
-                        onClick={() => deletePost(post.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </>
-                )}
+                  <div className="upcoming-actions">
+                    {!isEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={() => startEdit(post)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-btn"
+                          onClick={() => deletePost(post.id)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="primary-btn"
+                          onClick={() => saveEdit(post.id)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={cancelEdit}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

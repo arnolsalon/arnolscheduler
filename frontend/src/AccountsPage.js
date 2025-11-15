@@ -1,183 +1,171 @@
 // src/AccountsPage.js
 import React, { useEffect, useState } from 'react';
 
-const API_URL = 'http://localhost:4000';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
-// A proper React component for a single platform card
-function PlatformCard({ platformKey, label, entry, onConnect, onDisconnect }) {
-  const [inputValue, setInputValue] = useState(entry.username || '');
+const DEFAULT_PLATFORMS = ['instagram', 'facebook', 'tiktok'];
 
-  return (
-    <div className="account-card">
-      <div className="account-header">
-        <span className="account-name">{label}</span>
-        <span
-          className="account-status"
-          style={{ color: entry.connected ? '#2e7d32' : '#c62828' }}
-        >
-          {entry.connected ? 'Connected' : 'Not connected'}
-        </span>
-      </div>
-
-      <div className="form-group">
-        <label>Username / Handle</label>
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder={`@your_${platformKey}_name`}
-        />
-      </div>
-
-      <div className="account-actions">
-        {!entry.connected ? (
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => onConnect(platformKey, inputValue)}
-            disabled={!inputValue.trim()}
-          >
-            Connect {label}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => onDisconnect(platformKey)}
-          >
-            Disconnect
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AccountsPage() {
-  const [accounts, setAccounts] = useState({
-    instagram: { connected: false, username: '' },
-    facebook: { connected: false, username: '' },
-    tiktok: { connected: false, username: '' },
-  });
-  const [loading, setLoading] = useState(true);
+function AccountsPage({ authToken }) {
+  const [accounts, setAccounts] = useState({});
   const [statusMsg, setStatusMsg] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Load accounts from backend
-  useEffect(() => {
-    const fetchAccounts = async () => {
-      setLoading(true);
-      setStatusMsg('');
-
-      try {
-        const res = await fetch(`${API_URL}/api/accounts`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to load accounts');
-        }
-
-        setAccounts(data);
-      } catch (err) {
-        console.error(err);
-        setStatusMsg(err.message || 'Something went wrong');
-      } finally {
-        setLoading(false);
+  const loadAccounts = async () => {
+    setLoading(true);
+    setStatusMsg('');
+    try {
+      const res = await fetch(`${API_URL}/api/accounts`, {
+        headers: { 'x-auth-token': authToken },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load accounts');
       }
-    };
 
-    fetchAccounts();
+      // Convert array from backend to object keyed by platform
+      const map = {};
+      data.forEach((row) => {
+        map[row.platform] = {
+          connected: !!row.connected,
+          username: row.username || '',
+        };
+      });
+
+      // Ensure all default platforms are present
+      DEFAULT_PLATFORMS.forEach((p) => {
+        if (!map[p]) {
+          map[p] = { connected: false, username: '' };
+        }
+      });
+
+      setAccounts(map);
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(err.message || 'Failed to load accounts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Connect account
-  const handleConnect = async (platform, username) => {
+  const handleChange = (platform, field, value) => {
+    setAccounts((prev) => ({
+      ...prev,
+      [platform]: {
+        ...prev[platform],
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveAccount = async (platform) => {
     setStatusMsg('');
+    const account = accounts[platform];
 
     try {
-      const res = await fetch(`${API_URL}/api/accounts/connect`, {
+      const res = await fetch(`${API_URL}/api/accounts`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, username }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': authToken,
+        },
+        body: JSON.stringify({
+          platform,
+          connected: account.connected,
+          username: account.username,
+        }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to connect.');
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save account');
+      }
 
-      setAccounts(data.accounts);
-      setStatusMsg(`${platform} connected!`);
+      setStatusMsg(`✅ Saved ${platform} settings`);
+      await loadAccounts();
     } catch (err) {
       console.error(err);
-      setStatusMsg(err.message);
+      setStatusMsg(err.message || 'Failed to save account');
     }
   };
 
-  // Disconnect account
-  const handleDisconnect = async (platform) => {
-    setStatusMsg('');
-
-    try {
-      const res = await fetch(`${API_URL}/api/accounts/disconnect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to disconnect.');
-
-      setAccounts(data.accounts);
-      setStatusMsg(`${platform} disconnected.`);
-    } catch (err) {
-      console.error(err);
-      setStatusMsg(err.message);
-    }
+  const prettyName = (platform) => {
+    if (platform === 'instagram') return 'Instagram';
+    if (platform === 'facebook') return 'Facebook';
+    if (platform === 'tiktok') return 'TikTok';
+    return platform;
   };
-
-  if (loading) {
-    return (
-      <section className="card">
-        <h2>Accounts</h2>
-        <p className="subtitle">Loading...</p>
-      </section>
-    );
-  }
 
   return (
     <section className="card">
-      <h2>Accounts</h2>
+      <h2>Connected Accounts</h2>
       <p className="subtitle">
-        Connect Instagram, Facebook, and TikTok accounts for auto-posting.
-        This app supports **one account per platform**, perfect for your mom.
+        These settings represent your salon&apos;s social media accounts. Right
+        now this is just saved in the scheduler, but later it can be used for
+        real API connections.
       </p>
 
       {statusMsg && <p className="status-msg">{statusMsg}</p>}
 
-      <div className="accounts-grid">
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
+        <div className="accounts-grid">
+          {DEFAULT_PLATFORMS.map((platform) => {
+            const acc = accounts[platform] || {
+              connected: false,
+              username: '',
+            };
 
-        <PlatformCard
-          platformKey="instagram"
-          label="Instagram"
-          entry={accounts.instagram}
-          onConnect={handleConnect}
-          onDisconnect={handleDisconnect}
-        />
+            return (
+              <div key={platform} className="account-card">
+                <h3>{prettyName(platform)}</h3>
 
-        <PlatformCard
-          platformKey="facebook"
-          label="Facebook"
-          entry={accounts.facebook}
-          onConnect={handleConnect}
-          onDisconnect={handleDisconnect}
-        />
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={acc.connected}
+                    onChange={(e) =>
+                      handleChange(platform, 'connected', e.target.checked)
+                    }
+                  />
+                  <span>Connected</span>
+                </label>
 
-        <PlatformCard
-          platformKey="tiktok"
-          label="TikTok"
-          entry={accounts.tiktok}
-          onConnect={handleConnect}
-          onDisconnect={handleDisconnect}
-        />
+                <div className="form-group">
+                  <label>Display Name / Handle</label>
+                  <input
+                    type="text"
+                    value={acc.username}
+                    onChange={(e) =>
+                      handleChange(platform, 'username', e.target.value)
+                    }
+                    placeholder={
+                      platform === 'instagram'
+                        ? '@arnolsalon'
+                        : platform === 'facebook'
+                        ? 'Arnol Salon'
+                        : '@arnolsalon.tiktok'
+                    }
+                  />
+                </div>
 
-      </div>
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => saveAccount(platform)}
+                >
+                  Save {prettyName(platform)}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
