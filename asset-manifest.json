@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/arnolscheduler/static/css/main.27d235a2.css",
-    "main.js": "/arnolscheduler/static/js/main.7c9d659d.js",
+    "main.js": "/arnolscheduler/static/js/main.886d73d8.js",
     "index.html": "/arnolscheduler/index.html",
     "main.27d235a2.css.map": "/arnolscheduler/static/css/main.27d235a2.css.map",
-    "main.7c9d659d.js.map": "/arnolscheduler/static/js/main.7c9d659d.js.map"
+    "main.886d73d8.js.map": "/arnolscheduler/static/js/main.886d73d8.js.map"
   },
   "entrypoints": [
     "static/css/main.27d235a2.css",
-    "static/js/main.7c9d659d.js"
+    "static/js/main.886d73d8.js"
   ]
 }
